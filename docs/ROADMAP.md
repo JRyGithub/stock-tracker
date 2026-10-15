@@ -17,10 +17,11 @@ Decisions from this planning session:
 - **Small PRs into `main`** (branch protection on), with CI green before merging.
 - **ADRs** in `docs/adr/NNN-title.md` for any non-trivial choice (the spec's "why / alternative" tables are the seed). They are cheap to write and very useful for learning.
 - **Tests in the same PR as the code they cover**: Vitest for units and Postgres integration tests (docker compose locally, a service container in CI).
-- **TDD from Phase 2 onward, frontend and backend** (see below).
+- **Always TDD, frontend and backend** (see below).
+- **Architecture:** vertical slices on the backend (ADR 002) and atomic design on the frontend (ADR 003). House rules are in `AGENTS.md`.
 
-### Test-driven development (Phase 2 onward)
-Phases 0-1 are scaffolding and infra, where tests come after the code: config can't be usefully test-driven. From Phase 2, when real behaviour starts, use **red → green → refactor** for both the frontend and the backend:
+### Test-driven development (always)
+All behaviour is test-driven, frontend and backend alike, from the first line of real code (including Phase 1's `/healthz`). Only pure scaffolding, config and Terraform are exempt. Use **red → green → refactor**:
 1. **Red:** write a failing test that describes the behaviour, and run it to see it fail for the right reason.
 2. **Green:** write the minimum code that makes it pass.
 3. **Refactor:** clean up while the tests stay green. Then commit.
@@ -81,7 +82,8 @@ Habits:
 **Learn:** schema design, migrations, Postgres roles and grants, connection pooling, transactions.
 - Drizzle schema per spec §5: `watchlist` and `holdings` (with `user_id text not null`, unique on `(user_id, symbol)`), a shared `sentiment` table (symbol, ts, source, source_id, score, raw_snippet, unique on `(source, source_id)` so inserts are idempotent), and an optional `users` table keyed by oid.
 - Migrations include role creation and grants for `app_migrator`, `app_api`, and `app_worker`. Least privilege: `app_api` gets no DDL, and read-only access to `sentiment`.
-- `server/src/data/`: the only module that touches the DB. Every function requires a `userId`.
+- `server/src/shared/db/withUser()`: the transaction helper every slice repository must use (ADR 002). Feature slices (`server/src/features/<feature>/*.repository.ts`) are the only code that touches the DB, and every function requires a `userId`.
+- Decide where the shared Drizzle tables live (likely `packages/db`, since the worker needs them too), and write it up as an ADR.
 - Integration tests against real Postgres: user A cannot read or write user B's rows, and calls without a user context are rejected.
 - Pipeline: a migration step runs as `app_migrator` against Supabase (pooler string from Container Apps secrets for now), before the API deploys.
 

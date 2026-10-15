@@ -17,6 +17,25 @@ export default tseslint.config(
     },
   },
   {
+    // House style: arrow functions only (see AGENTS.md). Class/object methods and generators are exempt
+    // because they can't be arrows.
+    rules: {
+      'prefer-arrow-callback': 'error',
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'FunctionDeclaration[generator=false]',
+          message: 'Use an arrow function: `const name = (...) => { ... }`.',
+        },
+        {
+          selector:
+            'FunctionExpression[generator=false]:not(MethodDefinition > FunctionExpression):not(Property[method=true] > FunctionExpression)',
+          message: 'Use an arrow function instead of `function () {}`.',
+        },
+      ],
+    },
+  },
+  {
     files: ['**/*.js'],
     ...tseslint.configs.disableTypeChecked,
   },

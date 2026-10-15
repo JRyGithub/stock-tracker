@@ -4,6 +4,7 @@ Status: design agreed, no code written yet.
 Purpose of this file: give a fresh context everything needed to continue (scaffolding, schema, infra) without re-deriving decisions.
 
 Change log:
+- v5: code organisation decided: vertical slices on the backend (ADR 002) and atomic design on the frontend (ADR 003). The §6 data-access layer is now per-slice repositories using a shared `withUser()` helper. House rules (arrow functions only, always TDD, confirmed pushes) are in `AGENTS.md`.
 - v4: frontend moved to TanStack Start in SPA mode (static shell on Static Web Apps; server functions/routes unused, Fastify remains the only backend). Sentiment table decided as shared by symbol. Phased delivery plan lives in `docs/ROADMAP.md`.
 - v3: auth moved to Microsoft Entra External ID using standard OAuth 2.0 / OIDC (auth code + PKCE, access tokens with audience and scope). Clerk dropped because it uses its own session-token model rather than standard OAuth flows.
 - v2: auth switched from Supabase Auth (and briefly Entra External ID) to Clerk. Supabase is now used only as managed Postgres. Added security baseline and data-access/RLS design.
@@ -148,7 +149,7 @@ Every user-owned table carries `user_id text not null` (the access token's `oid`
 Goal: a forgotten `WHERE user_id = ...` must not be able to leak another user's data.
 
 Layer 1, application scoping (build first):
-- All DB access goes through one data-access module whose functions require a verified `userId`. No route handler talks to the DB directly.
+- All DB access goes through each feature slice's repository (`server/src/features/<feature>/*.repository.ts`, ADR 002). Every repository function requires a verified `userId` and runs inside the shared `withUser(userId, fn)` helper in `server/src/shared/db/`. No route handler talks to the DB directly. `withUser()` is the single security choke point, so it has its own isolation tests.
 - Every query on user-owned tables filters by that `userId`.
 
 Layer 2, Postgres Row Level Security (add once the schema settles, as defense in depth):
@@ -214,12 +215,21 @@ All routes except `/healthz` require a valid Entra-issued access token carrying 
 
 ```
 /web              TanStack Start app (SPA mode)
+  src/routes/                 pages (file routes): thin
+  src/components/{atoms,molecules,organisms,templates}/   atomic design (ADR 003)
+  src/api/                    fetch client + TanStack Query hooks
+  src/auth/                   MSAL (client-only)
 /server           Fastify API
-/worker           pg-boss worker / job handlers
-/packages/types   shared TypeScript types and zod schemas
+  src/features/<feature>/     vertical slices: routes, repository, service, tests (ADR 002)
+  src/shared/                 auth plugin, db + withUser(), config, errors
+/worker           pg-boss worker
+  src/jobs/<job>/             one slice per job
+/packages/types   shared TypeScript types and zod schemas (one file per feature)
 /infra            Terraform
 /.github/workflows  CI/CD
 ```
+
+Drizzle table definitions are shared between server and worker, so they don't live in a slice. Their location (likely `packages/db`) is decided in Phase 3.
 
 ## 11. Environments and config
 

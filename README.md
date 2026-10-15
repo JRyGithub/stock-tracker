@@ -5,6 +5,7 @@ A personal stock-following app: watchlist, holdings, live quotes and web sentime
 - Architecture and decisions: [spec.md](spec.md)
 - Phased delivery plan: [docs/ROADMAP.md](docs/ROADMAP.md)
 - Decision records: [docs/adr/](docs/adr/)
+- Rules for AI agents and contributors: [AGENTS.md](AGENTS.md) (Claude Code also loads it via `CLAUDE.md`; workflow skills live in `.claude/skills/`)
 
 ## Layout
 
