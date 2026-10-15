@@ -1,0 +1,13 @@
+{
+  "name": "@stock-tracker/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@stock-tracker/types": "workspace:*"
+  }
+}
