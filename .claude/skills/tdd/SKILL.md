@@ -1,6 +1,6 @@
 ---
 name: tdd
-description: Test-driven development loop (red → green → refactor) for this repo's frontend and backend. Use when implementing any new behaviour, API route, data-layer function, worker job, UI component, or bug fix from Phase 2 onward.
+description: Test-driven development loop (red → green → refactor) for this repo's frontend and backend. Use when implementing any new behaviour, API route, data-layer function, worker job, UI component, or bug fix. Always TDD; only pure scaffolding, config and Terraform are exempt.
 ---
 
 # TDD in Stock Tracker
@@ -9,6 +9,8 @@ Follow this loop for every behaviour. Show the owner each step: it's a learning 
 
 ## 1. Red: write one failing test
 - Put the test next to the code: `foo.ts` → `foo.test.ts`.
+  - **Backend:** inside the feature slice, for example `server/src/features/watchlist/watchlist.routes.test.ts` (ADR 002).
+  - **Frontend:** inside the component folder, for example `web/src/components/molecules/QuoteCell/QuoteCell.test.tsx` (ADR 003). Atoms, molecules and templates are props-only, so their tests don't need MSW or a router.
 - Name it after behaviour, not implementation: `rejects a token with the wrong audience`, not `calls jwtVerify`.
 - Run **only that package's tests** and confirm the test fails **for the right reason**: an assertion failure or a missing export, not a typo or a config error.
   ```bash

@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Get a change into main through a PR. Covers branch, safe staging, commit, push, opening the PR, waiting for CI and squash-merging. Use whenever work is ready to commit or the user says ship it, commit, open a PR, or merge.
+description: Get a change into main through a PR. Covers branch, safe staging, commit, confirmed push, opening the PR, waiting for CI and confirmed squash-merge. Use whenever work is ready to commit, push or merge, or the user says ship it, commit, open a PR, or merge.
 ---
 
 # Shipping a change
@@ -34,21 +34,31 @@ Check the staged files for:
 - Body: **why** the change was made and any trade-offs. The diff already shows what changed.
 - Add any attribution lines the environment requires.
 
-## 5. Push and open the PR
+## 5. STOP: get the owner's confirmation to push
+**Every push needs explicit confirmation, every time**: new branches, follow-up pushes and force-pushes. Show:
+```bash
+git log --oneline origin/main..HEAD     # or origin/<branch>..HEAD for a follow-up push
+git diff --stat origin/main...HEAD
+```
+Then ask, "OK to push `<branch>` (N commits) and open a PR?" and wait for a yes. An earlier yes doesn't cover this push.
+
+## 6. Push and open the PR (only after the yes)
 ```bash
 git push -u origin HEAD
 gh pr create --fill --body "<why, what changed, how it was tested>"
 ```
 
-## 6. Wait for CI, then merge
+## 7. Wait for CI, then STOP again before merging
 ```bash
 gh pr checks --watch
-gh pr merge --squash --delete-branch
-git switch main && git pull --ff-only
 ```
-- Merge only on green.
-- **Confirm with the user before merging** unless they've already said to merge.
-- If CI fails, fix it on the branch and push again. Don't bypass the check.
+- Report the result, and ask before merging, because merging is a push to `main`.
+- Merge only on green and only after a yes:
+  ```bash
+  gh pr merge --squash --delete-branch
+  git switch main && git pull --ff-only
+  ```
+- If CI fails, fix it on the branch, then go back to step 5 before pushing the fix.
 
 ## Dependabot PRs
-Merge them one at a time. Each merge makes the others out of date; Dependabot rebases them itself, or comment `@dependabot rebase`. Close any PR that breaks repo policy (for example a major `@types/node` bump that doesn't match Node) and explain why in a comment.
+Merging these also needs the owner's confirmation. Merge them one at a time. Each merge makes the others out of date; Dependabot rebases them itself, or comment `@dependabot rebase`. Close any PR that breaks repo policy (for example a major `@types/node` bump that doesn't match Node) and explain why in a comment.
