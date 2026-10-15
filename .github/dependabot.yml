@@ -8,6 +8,10 @@ updates:
     # Let new releases settle before upgrading
     cooldown:
       default-days: 14
+    ignore:
+      # Types must match the Node runtime (see .nvmrc). Bump this major together with Node.
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
     groups:
       dev-tooling:
         dependency-type: development
