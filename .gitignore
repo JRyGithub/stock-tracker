@@ -16,6 +16,10 @@ coverage/
 *.tfplan
 crash.log
 
+# Claude Code per-user settings (shared .claude/settings.json is fine to commit)
+.claude/settings.local.json
+.claude/*.tmp.*
+
 # editors / OS
 .vscode/*
 !.vscode/extensions.json
