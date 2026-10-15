@@ -17,8 +17,8 @@ web/src/
     molecules/             SymbolSearchField, QuoteCell: a few atoms combined, props only
     organisms/             WatchlistTable, HoldingsSummary, PriceChart: page sections; may use query hooks
     templates/             AppShell, TickerLayout: page layouts with slots (children); no data
-  api/                     fetch client + TanStack Query queryOptions/hooks per resource
-  auth/                    MSAL setup (client-only)
+  api/                     TanStack Query queryOptions/hooks per resource; queryFn calls server functions
+  server/                  server-only BFF code (session, msal-node, API client, server functions); see ADR 004
 ```
 
 Rules:
@@ -34,6 +34,7 @@ Rules:
 
   Nothing imports upward or sideways within the same level, except atoms, which may use other atoms.
 - **Data fetching happens only in routes and organisms,** through `api/` hooks. Atoms, molecules and templates are pure and take props only.
+- **Components never import from `server/` directly.** They reach it only through server functions, so server-only code can't end up in the client bundle.
 - **One folder per component:** `Component.tsx` and `Component.test.tsx`, plus an optional `index.ts`.
 - **If a component's level isn't obvious, choose the lower one,** and move it up when it gains responsibilities.
 

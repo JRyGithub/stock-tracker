@@ -9,7 +9,10 @@
 Decisions from this planning session:
 - **Deploy early with a walking skeleton.** A trivial slice goes to Azure via Terraform + GitHub Actions in Phase 1, and every later phase ships through that pipeline.
 - **The sentiment table is shared, keyed by symbol** (it is not user-owned and has no RLS). The worker polls the union of all users' watchlists. This resolves an open question in the spec.
-- **The frontend is TanStack Start in SPA mode** (`tanstackStart({ spa: { enabled: true } })`). It builds a static `_shell.html` plus assets, which Azure Static Web Apps hosts. **Server functions and server routes are not used:** Fastify stays the only backend, and MSAL + Bearer tokens are unchanged. Moving to SSR with a Backend-for-Frontend auth pattern is possible later and gets its own ADR.
+- **The frontend is TanStack Start with SSR, acting as a Backend-for-Frontend (ADR 004).** It runs as a second Container App with public ingress.
+  - The web server is the OAuth client (`@azure/msal-node`) and keeps tokens in an encrypted session store. The browser only gets an `httpOnly` cookie.
+  - Server functions are thin proxies to Fastify, which stays the only business backend, now with internal-only ingress.
+  - This replaced an earlier SPA-mode plan.
 
 ---
 
@@ -56,27 +59,60 @@ Habits:
 **Done when:** `pnpm -r test` passes locally and in CI on a PR.
 
 ## Phase 1: Walking skeleton deployed
-**Learn:** containers, GHCR, Terraform state, GitHub→Azure OIDC federation, Container Apps, Static Web Apps.
-- `server/`: Fastify with `GET /healthz` and pino logging. Write a multi-stage Dockerfile.
-- `web/`: scaffold TanStack Start, enable SPA mode, and add one route that calls `/healthz` and shows the result. Add `staticwebapp.config.json` with the navigation fallback to `/_shell.html`. Check that a deep link survives a refresh in the deployed app.
+**Learn:** containers, GHCR, Terraform state, GitHub→Azure OIDC federation, Container Apps (public vs internal ingress), SSR and hydration basics.
+- `server/`: Fastify with `GET /healthz` and pino logging, test-driven with `app.inject()`. Write a multi-stage Dockerfile.
+- `web/`: scaffold TanStack Start with SSR, plus the Router–Query SSR integration. Verify the current package names and Node deployment output, pin the versions, and record them in an ADR.
+  - **The first page is server-rendered.** Its loader calls a server function that fetches the API's `/healthz` server-to-server, so the response is already in the HTML. View the page source to check.
+  - Give `web/` its own `GET /healthz` for the container probe.
+  - Add the ESLint import-direction rules from ADR 003, plus a short nested `AGENTS.md` in `web/` and `server/`.
+  - Write a multi-stage Dockerfile.
 - Bootstrap Terraform remote state by hand (a one-off script or small `infra/bootstrap` stack: storage account + container), and document it.
-- `infra/`: resource group, Container Apps environment (Consumption), API container app (scale-to-zero), Static Web App, budget alert. Use UK South.
+- `infra/`:
+  - resource group and Container Apps environment (Consumption), in UK South
+  - **web** container app with public ingress and scale-to-zero
+  - **API** container app with **internal-only ingress**; the web app gets the API's internal FQDN as an env var
+  - budget alert
 - GitHub Actions: Entra app registration with a federated credential, so Actions logs in to Azure without a stored secret.
-- Pipeline: build and push the image to GHCR, run `terraform plan` on PRs, `apply` on main, then deploy the SWA. Set strict CORS on the API (frontend origin only).
+- Pipeline: build and push **both** images to GHCR. Run `terraform plan` on PRs and `apply` on main. Path filters mean an image is only rebuilt when its own app changed.
 - Create the Supabase project (London) now, by hand or with the provider, so the region choice and connection strings are settled. It isn't used yet.
 
-**Done when:** merging to main updates the live site, the site shows the API's health response, and `terraform plan` on a clean main shows no changes.
+**Done when:**
+- Merging to main updates the live site.
+- The page's **HTML source** already contains the API's health response.
+- The API's URL **isn't reachable from the internet**.
+- `terraform plan` on a clean main shows no changes.
 
 ## Phase 2: Identity end-to-end (OAuth 2.0 / OIDC)
-**Learn:** auth code + PKCE, access vs ID tokens, JWKS, `iss`/`aud`/`scp` claims. This is the key learning phase, so go slowly.
+**Learn:** auth code + PKCE, confidential vs public clients, access vs ID vs refresh tokens, JWKS, `iss`/`aud`/`scp` claims, the BFF pattern, secure session cookies, CSRF. This is the key learning phase, so go slowly. It's bigger than an SPA login, so consider splitting it into 2a (API token validation) and 2b (BFF login and sessions).
 - By hand: create the Entra External ID tenant and user flow (email OTP or password, non-SMS MFA). Record every setting in `docs/auth-setup.md`.
-- Terraform (`azuread`): the SPA registration (localhost + SWA redirect URIs) and the API registration (`api://stock-tracker-api`, `access_as_user` scope, `requestedAccessTokenVersion = 2`). Check that the provider can authenticate to the external tenant; if not, document a manual fallback.
-- `web/`: MSAL (`@azure/msal-react`) login/logout, created client-side only (not during the shell prerender). Use `acquireTokenSilent` for the API scope and a fetch wrapper that adds the Bearer header. Keep sessionStorage as the token cache. Gate authenticated routes with TanStack Router's `beforeLoad`, with the auth state passed in through router context.
+- Terraform (`azuread`):
+  - The **web** registration: a confidential client with a "Web" platform, redirect URIs for localhost and the deployed app, and a client secret stored as a Container Apps secret for now.
+  - The **API** registration: `api://stock-tracker-api`, `access_as_user` scope, `requestedAccessTokenVersion = 2`.
+  - Check that the provider can authenticate to the external tenant; if not, document a manual fallback.
+- **Session store:** write an ADR confirming the design (spec §3 Auth). Then add the `web_sessions` table with its migration and the `app_web` role (access to this table only). Encrypt the token cache with a key from config. Test-drive it: create, load, expire, rotate, delete, and check that the encryption round-trips.
+- `web/src/server/` (spec §3 Auth flow), test-driven:
+  - `GET /auth/login`: PKCE + `state` + `nonce`.
+  - `GET /auth/callback`: check `state`, redeem the code with `@azure/msal-node`, **rotate the session ID**, set the `__Host-session` cookie.
+  - `POST /auth/logout`: delete the session, clear the cookie, end the Entra session.
+  - An API client that calls `acquireTokenSilent`, then Fastify with a Bearer token.
+  - Gate authenticated routes in `beforeLoad` using the session from router context. If there's no session, redirect to `/auth/login`.
+  - An `Origin` check on all state-changing requests.
 - `server/`: an auth plugin using `jose` (remote JWKS, cached) that checks signature, `iss`, `aud`, `exp`/`nbf`, and the `scp` scope, and returns 401 or 403. It decorates the request with `userId = oid`.
 - `GET /api/v1/me` returns `{ oid }`. Use it to answer the spec's open question: do `oid` and `scp` appear as expected in the tokens?
 - First TDD exercise: write these tests *before* the auth plugin. Sign test tokens with a locally generated key pair, then cover the negative cases: wrong audience, wrong issuer, expired, missing scope, an ID token sent as an access token, and a missing header.
+- **BFF tests:**
+  - The cookie has the right flags.
+  - A login rotates the session ID.
+  - A wrong `state` is rejected.
+  - A cross-origin POST is rejected.
+  - An expired session redirects to login.
+  - **No token ever appears in an HTML response or in the serialized query cache.**
 
-**Done when:** a deployed login works, `/me` returns your oid, and all the negative tests pass.
+**Done when:**
+- A deployed login works, and the page shows the `oid` that `/me` returned.
+- In the browser's devtools there are **no tokens** in storage, readable cookies or page source. Only `__Host-session` (`HttpOnly`) is present.
+- Logout ends the session.
+- All the negative tests pass.
 
 ## Phase 3: Data layer and isolation
 **Learn:** schema design, migrations, Postgres roles and grants, connection pooling, transactions.
@@ -99,7 +135,11 @@ Habits:
 **Done when:** every route is tested (including auth and isolation), and the OpenAPI docs render.
 
 ## Phase 5: Core UI → personal MVP 🎯
-- File-based routes (`/`, `/watchlist`, `/ticker/$symbol`, `/holdings`). Route loaders prefetch with `queryClient.ensureQueryData`, and components read with `useSuspenseQuery`. Validate search params (such as the sentiment date range) with zod.
+- File-based routes (`/`, `/watchlist`, `/ticker/$symbol`, `/holdings`).
+  - **Data loading:** route loaders prefetch with `queryClient.ensureQueryData`, using query options whose `queryFn` is a server function. These run on the server for the first load and are hydrated into the client cache. Components read with `useSuspenseQuery`.
+  - **Quotes** refetch in the browser every 30-60 seconds through the same server functions.
+  - **Search params** (such as the sentiment date range) are validated with zod.
+  - **Watch for hydration mismatches:** times, number formatting and locale differences between server and browser.
 - Pages: a watchlist page, `/ticker/$symbol` detail (quote and price chart), and holdings with P&L.
 - Chart library: recommend **lightweight-charts** for price (designed for financial data) and **Recharts** for sentiment trends later. Record the choice in an ADR.
 - Loading, error, and empty states, plus a basic responsive layout.
@@ -126,14 +166,16 @@ Habits:
 ## Phase 8: Observability and secrets
 **Learn:** structured logging, error tracking, alerting, managed identity.
 - Pino request IDs and redaction (never log tokens). Sentry in both web and server, Azure Monitor alerts (5xx rate, auth-failure spikes, job failures), and readiness/liveness probes.
-- Move secrets to Key Vault, with Container Apps managed identity reading them. Remove any plain Container Apps secrets.
+- Move secrets to Key Vault, with Container Apps managed identity reading them: the web client secret, the session-encryption key and the DB connection strings. Remove any plain Container Apps secrets. Plan how to rotate the client secret, or switch to a certificate.
 
 **Done when:** a deliberately thrown error shows up in Sentry with a request ID, a test alert fires, and no secrets remain in Terraform variables or GitHub.
 
 ## Phase 9: Hardening and staging/prod split
-- Strict CSP and security headers on the SWA, container image scanning (Trivy) in CI, and `npm audit` gating.
-- Split into staging and prod: per-environment tfvars or folders, separate Supabase projects and Entra registrations, and promotion from staging to prod in the pipeline.
-- Custom domains (`app.` / `api.`). Decide on Supabase Pro.
+- **Security headers from the web server:** a nonce-based CSP (SSR hydration scripts need per-request nonces), HSTS and `frame-ancestors 'none'`.
+- **CI scanning:** container image scanning (Trivy) and `npm audit` gating.
+- **Split into staging and prod:** per-environment tfvars or folders, separate Supabase projects and Entra registrations, and promotion from staging to prod in the pipeline.
+- **Domain:** a custom domain for the web app only (`app.`), since the API stays internal.
+- **Decide** on Supabase Pro, and on `minReplicas: 1` for the web app to avoid SSR cold starts.
 - Add a backup/restore drill to the runbook (`docs/runbook.md`).
 
 **Done when:** a change goes PR → staging → prod with an approval gate, and the restore drill succeeds.

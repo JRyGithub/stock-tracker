@@ -11,7 +11,7 @@ A personal stock-following app: watchlist, holdings, live quotes and web sentime
 
 | Path | What |
 |---|---|
-| `web/` | TanStack Start app (SPA mode). Phase 1 |
+| `web/` | TanStack Start app (SSR + BFF). Phase 1 |
 | `server/` | Fastify API. Phase 1 |
 | `worker/` | pg-boss jobs. Phase 7 |
 | `packages/types/` | Shared zod schemas and TypeScript types |

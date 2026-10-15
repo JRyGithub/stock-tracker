@@ -38,6 +38,7 @@ One behaviour per cycle. A good order: rejection and error cases first, then the
 | Auth plugin | Vitest + `jose` `generateKeyPair` | Sign your own test tokens. Cover every rejection case: wrong `aud`/`iss`, expired, missing `scp`, ID token, no header. |
 | Data layer | Vitest + real Postgres (`pnpm db:up`) | **Never mock the DB.** Always include a cross-user isolation case: user A can't read or write user B's rows. |
 | Worker jobs | Vitest + faked HTTP (MSW or injected client) | Running the same job twice must create no duplicates. Cover retry and backoff. |
+| BFF (`web/src/server`) | Vitest, with `@azure/msal-node` and the API client faked; a real Postgres session store | Cookie flags, session rotation on login, `state` mismatch rejected, cross-origin POST rejected, expired session redirects, and **no token in any response or serialized cache** |
 | UI (`web`) | Vitest + React Testing Library + MSW | Query by role or label, the way a user would. Cover loading, error and empty states. |
 | E2E (Phase 5+) | Playwright | Only a few critical journeys |
 
