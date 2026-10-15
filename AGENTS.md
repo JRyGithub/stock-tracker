@@ -29,7 +29,7 @@ pnpm db:up / db:down  # local Postgres 17 via docker compose
 
 ## Layout
 pnpm monorepo:
-- `web/`: TanStack Start, SPA mode
+- `web/`: TanStack Start with SSR, acting as a BFF (ADR 004)
 - `server/`: Fastify API
 - `worker/`: pg-boss jobs
 - `packages/types/`: shared zod schemas and types
@@ -50,6 +50,11 @@ Shared packages export TypeScript source directly (`exports` points to `src/inde
 `web/src/components/{atoms,molecules,organisms,templates}`, with TanStack Start file routes in `web/src/routes/` as the pages.
 - **Imports flow downward only:** routes → templates → organisms → molecules → atoms.
 - **Data fetching happens only in routes and organisms,** through `web/src/api/` query hooks. Atoms, molecules and templates take props only.
+
+### Web server: SSR + BFF (ADR 004)
+- **`web/src/server/` is server-only:** sessions, `@azure/msal-node`, the API client and server functions. Components never import it directly; they reach it only through `createServerFn`.
+- **Server functions are thin proxies:** load the session, get an access token, call Fastify, return the result. **No business logic, and no DB access except the session store.** Business logic belongs in Fastify.
+- **SSR-safe rendering:** no `window`, `Date.now()`, random values or locale-dependent formatting in the first render. Otherwise the server and client output differ (a hydration mismatch).
 - **One folder per component:** `Component.tsx` plus `Component.test.tsx`.
 - If a component's level isn't obvious, choose the lower one.
 
@@ -86,7 +91,9 @@ Use the `add-dependency` skill:
 - Keep `@types/node` on the same major as the Node runtime.
 
 ## Security rules (from spec §6-7, non-negotiable)
-- The API accepts **only access tokens** issued for it. Check signature, `iss`, `aud`, `exp`/`nbf` and the `scp` scope. Never accept ID tokens.
+- The API accepts **only access tokens** issued for it. Check signature, `iss`, `aud`, `exp`/`nbf` and the `scp` scope. Never accept ID tokens. It does this even though it has internal-only ingress.
+- **Tokens never reach the browser.** Never return them, or any session internals, from a loader or server function, put them in the serialized query cache, or log them.
+- **The session cookie is always `__Host-session`, `HttpOnly`, `Secure`, `SameSite=Lax`.** Rotate the session ID on login. Every state-changing request checks `Origin`, and GETs never change state.
 - **All DB access goes through slice repositories using `withUser()`**, and every function takes a verified `userId`. Route handlers never query the DB directly.
 - Validate every input with zod. Use only parameterized queries (Drizzle).
 - Configuration comes from environment variables. Secrets never go in the repo, images or logs, and tokens are never logged.

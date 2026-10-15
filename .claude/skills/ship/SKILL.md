@@ -32,7 +32,6 @@ Check the staged files for:
 ## 4. Commit
 - Summary: imperative mood, ≤ 72 characters ("Add watchlist route", not "Added…").
 - Body: **why** the change was made and any trade-offs. The diff already shows what changed.
-- Add any attribution lines the environment requires.
 
 ## 5. STOP: get the owner's confirmation to push
 **Every push needs explicit confirmation, every time**: new branches, follow-up pushes and force-pushes. Show:
